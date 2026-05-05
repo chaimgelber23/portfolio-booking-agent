@@ -8,7 +8,7 @@
 // Send-time policy is encoded here. Per-business overrides are accepted via
 // the optional second argument to `sameDayTargetTime`.
 
-import { easternYMD, makeETDate, shiftEasternDays } from './date-utils.js';
+import { easternYMD, makeETDate, shiftEasternDays } from './date-utils';
 
 export interface SendTimePolicy {
     /** Wall-clock hour in ET when same-day reminders should fire for Wednesday-style appointments. */

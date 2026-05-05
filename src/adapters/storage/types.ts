@@ -2,7 +2,7 @@
 // Concrete adapters live in ./firestore.ts (gemach) and ./supabase.ts (future seo-business consumers).
 // The cron/webhook routes only see this interface — they never touch Firestore or Postgres directly.
 
-import type { Booking, ConversationState, ReminderKind, SmsLog } from '../../core/types.js';
+import type { Booking, ConversationState, ReminderKind, SmsLog } from '../../core/types';
 
 export interface CreateBookingInput {
     customerPhone: string;

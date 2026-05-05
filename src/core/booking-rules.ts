@@ -4,8 +4,8 @@
 // Slots are gemach-specific defaults but exposed as overridable so other
 // businesses (cold-calling, SaaS receptionist) can pass their own.
 
-import type { Booking } from './types.js';
-import { isValidAppointmentTime } from './date-utils.js';
+import type { Booking } from './types';
+import { isValidAppointmentTime } from './date-utils';
 
 export const APPOINTMENT_SLOTS = {
     wednesday: ['11:30 AM', '11:45 AM', '12:00 PM', '12:15 PM'],

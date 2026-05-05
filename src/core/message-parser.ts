@@ -1,7 +1,7 @@
 // AI-powered SMS message parser using OpenAI
 
 import OpenAI from 'openai';
-import type { ConversationState } from './types.js';
+import type { ConversationState } from './types';
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,

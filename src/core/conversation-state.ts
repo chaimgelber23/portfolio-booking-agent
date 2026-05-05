@@ -3,8 +3,8 @@
 // concrete storage adapters in adapters/storage/ handle that, calling these
 // pure functions for state-transition logic.
 
-import type { ConversationState } from './types.js';
-import { getMissingFields, mergeData, type ParsedMessage } from './message-parser.js';
+import type { ConversationState } from './types';
+import { getMissingFields, mergeData, type ParsedMessage } from './message-parser';
 
 export const CONVERSATION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 

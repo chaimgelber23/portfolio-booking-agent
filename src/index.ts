@@ -16,9 +16,9 @@ export type {
     Customer,
     ReminderKind,
     SmsLog,
-} from './core/types.js';
+} from './core/types';
 
-export type { BookingStore, CreateBookingInput } from './adapters/storage/types.js';
+export type { BookingStore, CreateBookingInput } from './adapters/storage/types';
 
 // Date utilities (DST-safe ET helpers + relative-date parser)
 export {
@@ -35,7 +35,7 @@ export {
     getNextAvailableDates,
     getWeekRange,
     getNextWeekRange,
-} from './core/date-utils.js';
+} from './core/date-utils';
 
 // Reminder scheduler (per-booking due-window logic)
 export {
@@ -45,7 +45,7 @@ export {
     DEFAULT_GEMACH_POLICY,
     type SendTimePolicy,
     type FireWindowResult,
-} from './core/reminder-scheduler.js';
+} from './core/reminder-scheduler';
 
 // Booking rules (pure validation, no I/O)
 export {
@@ -55,7 +55,7 @@ export {
     validateBookingDates,
     slotDurationForGroup,
     freshBookingDefaults,
-} from './core/booking-rules.js';
+} from './core/booking-rules';
 
 // Conversation state (pure transitions; storage I/O lives in adapters)
 export {
@@ -63,7 +63,7 @@ export {
     isBookingComplete,
     isStateExpired,
     CONVERSATION_TIMEOUT_MS,
-} from './core/conversation-state.js';
+} from './core/conversation-state';
 
 // Message parser (NLU via OpenAI; consumer provides OPENAI_API_KEY env)
 export {
@@ -71,7 +71,7 @@ export {
     mergeData,
     getMissingFields,
     type ParsedMessage,
-} from './core/message-parser.js';
+} from './core/message-parser';
 
 // Hebrew calendar / Shabbos guard
 export {
@@ -79,4 +79,4 @@ export {
     getBlockedDatesInRange,
     getUpcomingHolidays,
     type HolidayBlockInfo,
-} from './shabbos.js';
+} from './shabbos';
