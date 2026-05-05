@@ -47,7 +47,23 @@ export function isBookingComplete(state: ConversationState): boolean {
     return state.missingFields.length === 0;
 }
 
-/** Whether a state has expired and should be ignored / deleted. */
+/**
+ * Whether a state has expired. Accepts Date, Firestore Timestamp, or any
+ * value with .getTime() / .toMillis(). Storage adapters can pre-coerce.
+ */
 export function isStateExpired(state: ConversationState, now: Date = new Date()): boolean {
-    return state.expiresAt.getTime() < now.getTime();
+    const expiresAt = state.expiresAt as unknown;
+    let expiresMs: number;
+    if (expiresAt instanceof Date) {
+        expiresMs = expiresAt.getTime();
+    } else if (typeof (expiresAt as { toMillis?: () => number }).toMillis === 'function') {
+        expiresMs = (expiresAt as { toMillis: () => number }).toMillis();
+    } else if (typeof (expiresAt as { getTime?: () => number }).getTime === 'function') {
+        expiresMs = (expiresAt as { getTime: () => number }).getTime();
+    } else if (typeof expiresAt === 'number') {
+        expiresMs = expiresAt;
+    } else {
+        return false; // unrecognized — treat as not expired
+    }
+    return expiresMs < now.getTime();
 }

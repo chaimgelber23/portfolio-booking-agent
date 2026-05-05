@@ -54,6 +54,13 @@ export interface Booking {
     notes?: string;
 }
 
+/**
+ * Conversation state used by the pure helpers (parseMessage, mergeData,
+ * nextConversationState, isBookingComplete). The date fields are typed as
+ * `unknown` so consumers can store Firestore Timestamps, Postgres timestamptz,
+ * or native Dates without satisfying a tight Date interface — the pure
+ * helpers don't read them. Storage adapters narrow the type at I/O boundaries.
+ */
 export interface ConversationState {
     id: string;        // phone number
     phone: string;
@@ -67,8 +74,8 @@ export interface ConversationState {
         phone: string;
     }>;
     missingFields: string[];
-    lastMessageAt: Date;
-    expiresAt: Date;
+    lastMessageAt: unknown;
+    expiresAt: unknown;
 }
 
 export interface SmsLog {
