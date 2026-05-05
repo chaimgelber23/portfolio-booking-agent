@@ -1,0 +1,26 @@
+{
+    "name": "@portfolio/booking-agent",
+    "version": "0.1.0",
+    "private": true,
+    "description": "Reusable booking + SMS + voice-agent infrastructure shared across the portfolio (Gelber Gown Gemach, future cold-calling, future SaaS voice receptionist).",
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts",
+        "./core/*": "./src/core/*.ts",
+        "./adapters/storage": "./src/adapters/storage/types.ts",
+        "./shabbos": "./src/shabbos.ts"
+    },
+    "engines": {
+        "node": ">=20"
+    },
+    "peerDependencies": {
+        "@hebcal/core": "^6.0.0",
+        "openai": "^6.0.0"
+    },
+    "peerDependenciesMeta": {
+        "openai": { "optional": true }
+    },
+    "publishConfig": {
+        "access": "restricted"
+    }
+}
