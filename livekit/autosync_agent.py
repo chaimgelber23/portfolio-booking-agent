@@ -301,4 +301,8 @@ async def entrypoint(ctx: JobContext) -> None:
 
 if __name__ == "__main__":
     # Port 8082 because gemach's agent (com.gelber.voice-agent) reserves 8081.
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, port=8082))
+    # agent_name="autosync" makes this an EXPLICIT-DISPATCH worker — LiveKit
+    # only routes calls to it when a dispatch rule sets agent_name="autosync".
+    # Keeps gemach (anonymous worker) and autosync calls cleanly separated even
+    # though both run on the same LiveKit Cloud project.
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, port=8082, agent_name="autosync"))
