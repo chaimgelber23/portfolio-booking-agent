@@ -305,4 +305,15 @@ if __name__ == "__main__":
     # only routes calls to it when a dispatch rule sets agent_name="autosync".
     # Keeps gemach (anonymous worker) and autosync calls cleanly separated even
     # though both run on the same LiveKit Cloud project.
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, port=8082, agent_name="autosync"))
+    # load_threshold=0.95 keeps the worker available even under Mac Mini's
+    # normal CPU load (which hovers near 0.7 from gemach + other services).
+    # Default 0.7 caused the worker to oscillate to "unavailable" mid-call
+    # → LiveKit returned 486 Busy → caller heard busy signal.
+    cli.run_app(
+        WorkerOptions(
+            entrypoint_fnc=entrypoint,
+            port=8082,
+            agent_name="autosync",
+            load_threshold=0.95,
+        )
+    )
