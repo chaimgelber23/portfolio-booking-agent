@@ -301,19 +301,25 @@ async def entrypoint(ctx: JobContext) -> None:
 
 if __name__ == "__main__":
     # Port 8082 because gemach's agent (com.gelber.voice-agent) reserves 8081.
-    # agent_name="autosync" makes this an EXPLICIT-DISPATCH worker — LiveKit
-    # only routes calls to it when a dispatch rule sets agent_name="autosync".
-    # Keeps gemach (anonymous worker) and autosync calls cleanly separated even
-    # though both run on the same LiveKit Cloud project.
+    #
+    # NO agent_name set (intentionally anonymous worker). Earlier we tried
+    # agent_name="autosync" so the dispatch rule's room_config.agents=[
+    # {agent_name="autosync"}] would route SIP calls explicitly. Manual API
+    # dispatch via agent_dispatch.create_dispatch() worked fine — but real
+    # SIP-triggered calls never reached the agent (LiveKit responded 180
+    # Ringing then hung; caller heard busy after Telnyx timeout). The
+    # dispatch rule's agent_name field doesn't appear to propagate to the
+    # SIP dispatcher's actual job creation. Workaround: anonymous worker
+    # accepts ANY dispatch in this project. Safe because the autosync
+    # project is isolated from gemach (different LiveKit Cloud project) so
+    # there's no cross-project collision risk.
+    #
     # load_threshold=0.95 keeps the worker available even under Mac Mini's
     # normal CPU load (which hovers near 0.7 from gemach + other services).
-    # Default 0.7 caused the worker to oscillate to "unavailable" mid-call
-    # → LiveKit returned 486 Busy → caller heard busy signal.
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
             port=8082,
-            agent_name="autosync",
             load_threshold=0.95,
         )
     )
