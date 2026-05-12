@@ -383,17 +383,45 @@ def _campaign_id_from_attrs(ctx: RunContext) -> Optional[str]:
 # Entrypoint — runs once per inbound call
 # ---------------------------------------------------------------------------
 
+async def _wait_for_sip_attrs(ctx: JobContext, timeout_s: float = 1.2) -> tuple[Optional[str], Optional[str]]:
+    """Wait briefly for the SIP participant to join the room and expose
+    `sip.toUser` / `sip.fromUser`. In practice on this LiveKit project the
+    attrs almost never show up (dispatchRuleIndividual puts the FROM number
+    in the room name and never sets the TO attr), so we fall back to the
+    hardcoded MDP_FALLBACK_HOTLINE_NUMBER fast. Was 6s — now 1.2s to keep
+    pickup-to-first-word under ~3s.
+    """
+    import asyncio
+    start = time.time()
+    while time.time() - start < timeout_s:
+        to_n = _to_number_from_metadata(ctx)
+        from_n = _from_number_from_metadata(ctx)
+        if to_n:
+            return to_n, from_n
+        await asyncio.sleep(0.1)
+    return _to_number_from_metadata(ctx), _from_number_from_metadata(ctx)
+
+
 async def entrypoint(ctx: JobContext) -> None:
     logger.info("connecting to room %s", ctx.room.name)
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
     tool = MatchdayproToolClient()
 
-    to_number = _to_number_from_metadata(ctx)
-    from_number = _from_number_from_metadata(ctx)
+    # Wait briefly for the SIP participant to actually appear so we can
+    # read sip.toUser (the dialed number). LiveKit's dispatchRuleIndividual
+    # uses the FROM number in the room name, so we MUST get TO from attrs.
+    to_number, from_number = await _wait_for_sip_attrs(ctx)
     if not to_number:
-        logger.error("could not resolve dialed number from room %s", ctx.room.name)
-        return
+        # Last-resort hardcoded fallback for the only number currently active.
+        # This is only safe while matchdaypro has 1 hotline number; revisit
+        # the moment a second number is provisioned.
+        logger.warning(
+            "SIP attrs not populated within timeout for room %s — falling back to default hotline number",
+            ctx.room.name,
+        )
+        to_number = os.environ.get("MDP_FALLBACK_HOTLINE_NUMBER", "+12017818379")
+    logger.info("resolved to=%s from=%s for room %s", to_number, from_number, ctx.room.name)
 
     # Step 1 — resolve tenant (and check DNC).
     resolve = await tool.call("resolve_tenant", {"to": to_number, "from": from_number})
@@ -479,10 +507,18 @@ async def entrypoint(ctx: JobContext) -> None:
     # stash campaign_id so the agent's check_campaign_status tool can find it
     setattr(agent, "_campaign_id", campaign_id)
 
+    # TTS: OpenAI (works on any OPENAI_API_KEY) — used until ElevenLabs is on
+    # a paid plan. Voice is "shimmer" (warm female). Set MDP_TTS=elevenlabs to
+    # switch back once the ElevenLabs account is upgraded to Starter or above.
+    if os.environ.get("MDP_TTS", "openai") == "elevenlabs":
+        tts_engine = elevenlabs.TTS(voice_id=voice_id, model="eleven_turbo_v2_5")
+    else:
+        tts_engine = openai.TTS(model="gpt-4o-mini-tts", voice="shimmer")
+
     session = AgentSession(
         stt=deepgram.STT(model="nova-3"),
         llm=openai.LLM(model="gpt-4o", temperature=0.6),
-        tts=elevenlabs.TTS(voice_id=voice_id, model="eleven_turbo_v2_5"),
+        tts=tts_engine,
         vad=silero.VAD.load(min_silence_duration=0.5),
         allow_interruptions=True,
     )
