@@ -409,6 +409,12 @@ async def entrypoint(ctx: JobContext) -> None:
     logger.info("connecting to room %s", ctx.room.name)
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
+    # Smoke-test fast path: cron dispatches rooms named "mdp-smoke-{ts}" hourly
+    # to verify the full STT+LLM+TTS init path works end-to-end. We skip the
+    # tool-API roundtrips so smoke tests don't pollute the production call log.
+    if ctx.room.name.startswith("mdp-smoke-"):
+        return await _smoke_test_entrypoint(ctx)
+
     tool = MatchdayproToolClient()
 
     # Wait briefly for the SIP participant to actually appear so we can
@@ -622,6 +628,38 @@ def _prewarm(proc: JobProcess) -> None:
     # PyTorch cold-load cost (~5-10s) inside session.start. Yesterday's 31s
     # silence + today's 44s entrypoint-hang were both VAD-load-on-first-call.
     proc.userdata["vad"] = silero.VAD.load(min_silence_duration=0.5)
+
+
+async def _smoke_test_entrypoint(ctx: JobContext) -> None:
+    """Lightweight entrypoint exercised by the hourly cron smoke test.
+    Verifies VAD/STT/LLM/TTS plugins all INITIALIZE within the
+    `session.start` timeout — which is what the 1-in-4 production drops
+    were actually failing on. We skip `session.say` because synthetic
+    dispatches have no participant to receive audio (TTS buffers
+    indefinitely waiting for a subscriber). TTS auth issues are caught
+    by the watchdog on real calls. Logs `smoke OK` on success."""
+    started = time.time()
+    logger.info("smoke test entrypoint for %s", ctx.room.name)
+
+    if os.environ.get("MDP_TTS", "openai") == "elevenlabs":
+        tts_engine = elevenlabs.TTS(voice_id=DEFAULT_VOICE_ID, model="eleven_turbo_v2_5")
+    else:
+        tts_engine = openai.TTS(model="gpt-4o-mini-tts", voice="shimmer")
+
+    session = AgentSession(
+        stt=deepgram.STT(model="nova-3"),
+        llm=openai.LLM(model="gpt-4o-mini", temperature=0.3),
+        tts=tts_engine,
+        vad=ctx.proc.userdata["vad"],
+        allow_interruptions=False,
+    )
+    agent = Agent(instructions="Smoke test agent.")
+    try:
+        await asyncio.wait_for(session.start(agent=agent, room=ctx.room), timeout=15)
+    except asyncio.TimeoutError:
+        logger.error("smoke test FAIL: session.start timed out (>15s) on %s", ctx.room.name)
+        return
+    logger.info("smoke OK %s in %.2fs (session.start completed)", ctx.room.name, time.time() - started)
 
 
 if __name__ == "__main__":
