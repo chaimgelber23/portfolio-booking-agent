@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import asyncio
 import time
 from typing import Any, Optional
 
@@ -42,6 +43,7 @@ from livekit.agents import (
     AgentSession,
     AutoSubscribe,
     JobContext,
+    JobProcess,
     JobRequest,
     RunContext,
     WorkerOptions,
@@ -442,11 +444,17 @@ async def entrypoint(ctx: JobContext) -> None:
             stt=deepgram.STT(model="nova-3"),
             llm=openai.LLM(model="gpt-4o-mini", temperature=0.3),
             tts=elevenlabs.TTS(voice_id=voice_id, model="eleven_turbo_v2_5"),
-            vad=silero.VAD.load(min_silence_duration=0.5),
+            vad=ctx.proc.userdata["vad"],
             allow_interruptions=False,
         )
         agent = Agent(instructions="Briefly acknowledge DNC and end the call.")
-        await session.start(agent=agent, room=ctx.room)
+        logger.info("DNC path: starting session...")
+        try:
+            await asyncio.wait_for(session.start(agent=agent, room=ctx.room), timeout=15)
+        except asyncio.TimeoutError:
+            logger.error("DNC path: session.start timed out (>15s)")
+            return
+        logger.info("DNC path: session started, playing message")
         await session.say(
             f"I see we have you on our do-not-call list for {org_name}. Confirming you're still off. Have a good day.",
             allow_interruptions=False,
@@ -550,7 +558,13 @@ async def entrypoint(ctx: JobContext) -> None:
             pass
 
     started = time.time()
-    await session.start(agent=agent, room=ctx.room)
+    logger.info("starting AgentSession (STT+LLM+TTS+VAD)...")
+    try:
+        await asyncio.wait_for(session.start(agent=agent, room=ctx.room), timeout=15)
+    except asyncio.TimeoutError:
+        logger.error("session.start timed out (>15s) — caller heard dead air, ending")
+        return
+    logger.info("session started in %.2fs, playing disclosure", time.time() - started)
 
     # The mandatory disclosure — said first regardless of LLM speed.
     disclosure = (
@@ -561,6 +575,7 @@ async def entrypoint(ctx: JobContext) -> None:
         "If you don't want calls like this, say 'remove me' and I'll take you off the list right now."
     )
     await session.say(disclosure, allow_interruptions=True)
+    logger.info("disclosure played, conversation handed to LLM")
     transcript.append({"role": "agent", "text": disclosure, "ts": _now_iso()})
 
     async def _on_end() -> None:
@@ -602,11 +617,19 @@ async def _request_fnc(req: JobRequest) -> None:
     await req.accept()
 
 
+def _prewarm(proc: JobProcess) -> None:
+    # Load silero VAD once per prewarm process so the first call doesn't pay
+    # PyTorch cold-load cost (~5-10s) inside session.start. Yesterday's 31s
+    # silence + today's 44s entrypoint-hang were both VAD-load-on-first-call.
+    proc.userdata["vad"] = silero.VAD.load(min_silence_duration=0.5)
+
+
 if __name__ == "__main__":
     # Port 8084 — gemach 8081, autosync 8082, cold-calls 8083, matchdaypro 8084.
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
+            prewarm_fnc=_prewarm,
             request_fnc=_request_fnc,
             port=8084,
             load_threshold=0.95,

@@ -29,11 +29,15 @@ from typing import Any, Optional
 
 import httpx
 from dotenv import load_dotenv
+import asyncio
+import time
+
 from livekit.agents import (
     Agent,
     AgentSession,
     AutoSubscribe,
     JobContext,
+    JobProcess,
     JobRequest,
     RunContext,
     WorkerOptions,
@@ -273,15 +277,23 @@ async def entrypoint(ctx: JobContext) -> None:
             voice_id=os.environ.get("ELEVEN_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
             model="eleven_turbo_v2_5",
         ),
-        vad=silero.VAD.load(),
+        vad=ctx.proc.userdata["vad"],
         allow_interruptions=True,
     )
 
-    await session.start(agent=agent, room=ctx.room)
+    started = time.time()
+    logger.info("starting AgentSession (STT+LLM+TTS+VAD)...")
+    try:
+        await asyncio.wait_for(session.start(agent=agent, room=ctx.room), timeout=15)
+    except asyncio.TimeoutError:
+        logger.error("session.start timed out (>15s) — caller heard dead air, ending")
+        return
+    logger.info("session started in %.2fs, playing greeting", time.time() - started)
     await session.say(
         f"Hi, thank you for calling {business_name}. How can I help you today?",
         allow_interruptions=True,
     )
+    logger.info("greeting played, conversation handed to LLM")
 
     async def _log_on_end() -> None:
         try:
@@ -314,6 +326,12 @@ async def _request_fnc(req: JobRequest) -> None:
     await req.accept()
 
 
+def _prewarm(proc: JobProcess) -> None:
+    # Load silero VAD once per prewarm process so first call doesn't pay
+    # PyTorch cold-load cost inside session.start.
+    proc.userdata["vad"] = silero.VAD.load()
+
+
 if __name__ == "__main__":
     # Port 8082 because gemach's agent (com.gelber.voice-agent) reserves 8081.
     # load_threshold=0.95 keeps the worker available even under Mac Mini's
@@ -321,6 +339,7 @@ if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
+            prewarm_fnc=_prewarm,
             request_fnc=_request_fnc,
             port=8082,
             load_threshold=0.95,

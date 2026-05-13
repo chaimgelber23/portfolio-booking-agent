@@ -34,11 +34,15 @@ from typing import Any, Optional
 
 import httpx
 from dotenv import load_dotenv
+import time
+
 from livekit.agents import (
     Agent,
     AgentSession,
     AutoSubscribe,
     JobContext,
+    JobProcess,
+    JobRequest,
     RunContext,
     WorkerOptions,
     cli,
@@ -352,11 +356,18 @@ async def entrypoint(ctx: JobContext) -> None:
             voice_id=os.environ.get("ELEVEN_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
             model="eleven_turbo_v2_5",
         ),
-        vad=silero.VAD.load(),
+        vad=ctx.proc.userdata["vad"],
         allow_interruptions=True,
     )
 
-    await session.start(agent=agent, room=ctx.room)
+    started = time.time()
+    logger.info("starting AgentSession (STT+LLM+TTS+VAD)...")
+    try:
+        await asyncio.wait_for(session.start(agent=agent, room=ctx.room), timeout=15)
+    except asyncio.TimeoutError:
+        logger.error("session.start timed out (>15s) — ending call")
+        return
+    logger.info("session started in %.2fs", time.time() - started)
 
     # Open with the script's opening line, filled in. We say it directly so
     # the LLM doesn't paraphrase the carefully tuned cold opener.
@@ -366,26 +377,28 @@ async def entrypoint(ctx: JobContext) -> None:
 
     if opener:
         await session.say(opener, allow_interruptions=True)
+        logger.info("opener played, conversation handed to LLM")
 
-    # Voicemail heuristic: if no human speech transcribed within 8 seconds of
-    # the opener, deliver the voicemail script and end. This is intentionally
-    # crude — the alternative (training a beep detector) is over-engineering.
+    # Voicemail heuristic: sample audio_level every 0.5s for 15s. If ANY sample
+    # detects speech, abort voicemail. Real humans almost always make some sound
+    # (hello?, breathing, background) — a single-snapshot read at t=8s was
+    # missing real answerers who paused briefly. Total window 15s gives the
+    # answerer time to think after hearing the opener.
     async def _voicemail_watchdog() -> None:
-        await asyncio.sleep(8.0)
-        if agent._outcome_logged:
-            return
-        # If we got here, either there was no response or it was unintelligible.
-        # Default to leaving the voicemail script. Real humans almost always say
-        # *something* within 8s — even "hello?" registers.
-        try:
-            heard_any = any(
-                p for p in ctx.room.remote_participants.values()
-                if getattr(p, "audio_level", 0) > 0
-            )
-        except Exception:
-            heard_any = False
-        if heard_any:
-            return
+        heard_speech = False
+        for _ in range(30):  # 30 × 0.5s = 15s
+            await asyncio.sleep(0.5)
+            if agent._outcome_logged:
+                return
+            try:
+                for p in ctx.room.remote_participants.values():
+                    if getattr(p, "audio_level", 0) > 0.01:
+                        heard_speech = True
+                        break
+            except Exception:
+                pass
+            if heard_speech:
+                return
         logger.info("voicemail heuristic fired on %s", ctx.room.name)
         if voicemail:
             await session.say(voicemail, allow_interruptions=False)
@@ -424,11 +437,30 @@ async def entrypoint(ctx: JobContext) -> None:
     ctx.add_shutdown_callback(_final_log)
 
 
+async def _request_fnc(req: JobRequest) -> None:
+    # Only accept cold-call outbound rooms (prefix "cc-"). Reject inbound
+    # tenant rooms (mdp-*, as-*) back to the queue so the right tenant's
+    # agent can pick them up. Replaces the older inside-entrypoint check
+    # which accepted+exited (killing the dispatch).
+    name = req.room.name or ""
+    if not name.startswith("cc-"):
+        await req.reject(terminate=False)
+        return
+    await req.accept()
+
+
+def _prewarm(proc: JobProcess) -> None:
+    # Load silero VAD once per prewarm process.
+    proc.userdata["vad"] = silero.VAD.load()
+
+
 if __name__ == "__main__":
     # Port 8083 — gemach (8081) + autosync (8082) reserve the lower ports.
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
+            prewarm_fnc=_prewarm,
+            request_fnc=_request_fnc,
             port=8083,
             load_threshold=0.95,
         )
