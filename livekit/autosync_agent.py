@@ -34,6 +34,7 @@ from livekit.agents import (
     AgentSession,
     AutoSubscribe,
     JobContext,
+    JobRequest,
     RunContext,
     WorkerOptions,
     cli,
@@ -299,26 +300,28 @@ async def entrypoint(ctx: JobContext) -> None:
     ctx.add_shutdown_callback(_log_on_end)
 
 
+async def _request_fnc(req: JobRequest) -> None:
+    # Only accept rooms created for AutoSync inbound calls. Matchdaypro
+    # rooms start with "mdp-", cold-call rooms with "cc-" — without this
+    # filter we race against those agents in the same LiveKit project
+    # and accept their dispatches, then disconnect on number-resolve fail,
+    # killing the caller's call. terminate=False returns the job to the
+    # queue so the right tenant's worker can pick it up.
+    name = req.room.name or ""
+    if not name.startswith("as-"):
+        await req.reject(terminate=False)
+        return
+    await req.accept()
+
+
 if __name__ == "__main__":
     # Port 8082 because gemach's agent (com.gelber.voice-agent) reserves 8081.
-    #
-    # NO agent_name set (intentionally anonymous worker). Earlier we tried
-    # agent_name="autosync" so the dispatch rule's room_config.agents=[
-    # {agent_name="autosync"}] would route SIP calls explicitly. Manual API
-    # dispatch via agent_dispatch.create_dispatch() worked fine — but real
-    # SIP-triggered calls never reached the agent (LiveKit responded 180
-    # Ringing then hung; caller heard busy after Telnyx timeout). The
-    # dispatch rule's agent_name field doesn't appear to propagate to the
-    # SIP dispatcher's actual job creation. Workaround: anonymous worker
-    # accepts ANY dispatch in this project. Safe because the autosync
-    # project is isolated from gemach (different LiveKit Cloud project) so
-    # there's no cross-project collision risk.
-    #
     # load_threshold=0.95 keeps the worker available even under Mac Mini's
     # normal CPU load (which hovers near 0.7 from gemach + other services).
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
+            request_fnc=_request_fnc,
             port=8082,
             load_threshold=0.95,
         )

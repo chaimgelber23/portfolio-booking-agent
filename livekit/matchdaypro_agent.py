@@ -42,6 +42,7 @@ from livekit.agents import (
     AgentSession,
     AutoSubscribe,
     JobContext,
+    JobRequest,
     RunContext,
     WorkerOptions,
     cli,
@@ -590,11 +591,23 @@ def _now_iso() -> str:
     return datetime.datetime.utcnow().isoformat() + "Z"
 
 
+async def _request_fnc(req: JobRequest) -> None:
+    # Only accept matchdaypro inbound rooms (prefix "mdp-"). Reject everything
+    # else back to the queue so autosync/cold-call agents can pick up their
+    # own dispatches. terminate=False = re-queue, not kill.
+    name = req.room.name or ""
+    if not name.startswith("mdp-"):
+        await req.reject(terminate=False)
+        return
+    await req.accept()
+
+
 if __name__ == "__main__":
     # Port 8084 — gemach 8081, autosync 8082, cold-calls 8083, matchdaypro 8084.
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
+            request_fnc=_request_fnc,
             port=8084,
             load_threshold=0.95,
         )
