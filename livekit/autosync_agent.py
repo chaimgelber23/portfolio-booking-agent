@@ -29,11 +29,16 @@ from typing import Any, Optional
 
 import httpx
 from dotenv import load_dotenv
+import asyncio
+import time
+
 from livekit.agents import (
     Agent,
     AgentSession,
     AutoSubscribe,
     JobContext,
+    JobProcess,
+    JobRequest,
     RunContext,
     WorkerOptions,
     cli,
@@ -272,15 +277,23 @@ async def entrypoint(ctx: JobContext) -> None:
             voice_id=os.environ.get("ELEVEN_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
             model="eleven_turbo_v2_5",
         ),
-        vad=silero.VAD.load(),
+        vad=ctx.proc.userdata["vad"],
         allow_interruptions=True,
     )
 
-    await session.start(agent=agent, room=ctx.room)
+    started = time.time()
+    logger.info("starting AgentSession (STT+LLM+TTS+VAD)...")
+    try:
+        await asyncio.wait_for(session.start(agent=agent, room=ctx.room), timeout=15)
+    except asyncio.TimeoutError:
+        logger.error("session.start timed out (>15s) — caller heard dead air, ending")
+        return
+    logger.info("session started in %.2fs, playing greeting", time.time() - started)
     await session.say(
         f"Hi, thank you for calling {business_name}. How can I help you today?",
         allow_interruptions=True,
     )
+    logger.info("greeting played, conversation handed to LLM")
 
     async def _log_on_end() -> None:
         try:
@@ -299,26 +312,35 @@ async def entrypoint(ctx: JobContext) -> None:
     ctx.add_shutdown_callback(_log_on_end)
 
 
+async def _request_fnc(req: JobRequest) -> None:
+    # Only accept rooms created for AutoSync inbound calls. Matchdaypro
+    # rooms start with "mdp-", cold-call rooms with "cc-" — without this
+    # filter we race against those agents in the same LiveKit project
+    # and accept their dispatches, then disconnect on number-resolve fail,
+    # killing the caller's call. terminate=False returns the job to the
+    # queue so the right tenant's worker can pick it up.
+    name = req.room.name or ""
+    if not name.startswith("as-"):
+        await req.reject(terminate=False)
+        return
+    await req.accept()
+
+
+def _prewarm(proc: JobProcess) -> None:
+    # Load silero VAD once per prewarm process so first call doesn't pay
+    # PyTorch cold-load cost inside session.start.
+    proc.userdata["vad"] = silero.VAD.load()
+
+
 if __name__ == "__main__":
     # Port 8082 because gemach's agent (com.gelber.voice-agent) reserves 8081.
-    #
-    # NO agent_name set (intentionally anonymous worker). Earlier we tried
-    # agent_name="autosync" so the dispatch rule's room_config.agents=[
-    # {agent_name="autosync"}] would route SIP calls explicitly. Manual API
-    # dispatch via agent_dispatch.create_dispatch() worked fine — but real
-    # SIP-triggered calls never reached the agent (LiveKit responded 180
-    # Ringing then hung; caller heard busy after Telnyx timeout). The
-    # dispatch rule's agent_name field doesn't appear to propagate to the
-    # SIP dispatcher's actual job creation. Workaround: anonymous worker
-    # accepts ANY dispatch in this project. Safe because the autosync
-    # project is isolated from gemach (different LiveKit Cloud project) so
-    # there's no cross-project collision risk.
-    #
     # load_threshold=0.95 keeps the worker available even under Mac Mini's
     # normal CPU load (which hovers near 0.7 from gemach + other services).
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
+            prewarm_fnc=_prewarm,
+            request_fnc=_request_fnc,
             port=8082,
             load_threshold=0.95,
         )

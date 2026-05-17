@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.coldcalls.voice-agent</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/chaimgelber/portfolio-booking-agent/livekit/.venv/bin/python3</string>
+        <string>/Users/chaimgelber/portfolio-booking-agent/livekit/cold_call_agent.py</string>
+        <string>start</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/chaimgelber/portfolio-booking-agent/livekit</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>NetworkState</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/chaimgelber/Library/Logs/com.coldcalls.voice-agent.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/chaimgelber/Library/Logs/com.coldcalls.voice-agent.err.log</string>
+
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>4096</integer>
+    </dict>
+</dict>
+</plist>

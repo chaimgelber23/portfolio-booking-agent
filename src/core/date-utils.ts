@@ -73,10 +73,27 @@ export function shiftEasternDays(date: Date, days: number): { year: number; mont
 }
 
 /**
+ * Normalize common day-name variants from voice transcription.
+ * Voice STT mishears "motzei" in many ways; callers also say "Saturday night".
+ * Collapse all of these to canonical "motzei shabbos" / "shabbos" before regex.
+ */
+function normalizeDayPhrase(s: string): string {
+    let out = s;
+    // Order matters: catch multi-word phrases first
+    out = out.replace(/\b(sat|saturday)\s*(night|nite|evening|eve)\b/gi, 'motzei shabbos');
+    out = out.replace(/\b(motza?ei|motzaei|motzai|motzay|motzee|moetzei|moatzei|moetzai|mosaei|motzi|mo[ts]ay|moat[- ]?say)\b\s*(shabbos|shabbas|shabbat|shabbis|shabis)\b/gi, 'motzei shabbos');
+    // Lone "motzei" / "motzai" (no shabbos word) — caller almost always means motzei shabbos
+    out = out.replace(/\b(motza?ei|motzaei|motzai|motzay|motzee|moetzei|moatzei)\b(?!\s*shabbos)/gi, 'motzei shabbos');
+    // Standalone shabbos variants → shabbos (handled as Saturday)
+    out = out.replace(/\b(shabbas|shabbat|shabbis|shabis)\b/gi, 'shabbos');
+    return out;
+}
+
+/**
  * Parse natural language date to Date object
  */
 export function parseDate(dateStr: string, referenceDate?: Date): Date | null {
-    const lower = dateStr.toLowerCase().trim();
+    const lower = normalizeDayPhrase(dateStr.toLowerCase().trim());
     const today = new Date(referenceDate || toEasternDate());
     today.setHours(0, 0, 0, 0);
 

@@ -106,19 +106,28 @@ async def create_booking(
     group_size: int,
     wedding_date: str,
     phone: str,
+    slot_pairing: str = "single",
 ) -> str:
     """Create a new appointment booking.
 
     Only call this AFTER you have collected ALL required information AND
-    read it back to the caller for confirmation. All times are Eastern Time.
+    done the single recap for confirmation. All times are Eastern Time.
+
+    For groups of 5–6 people, the caller MUST be offered two options
+    before this is called: (a) the last 30-minute slot of the evening, or
+    (b) two regular 15-minute slots back-to-back. Pass slot_pairing="consecutive"
+    for option (b); pass slot_pairing="single" (the default) for option (a)
+    or for any group of 1–4.
 
     Args:
-        name: The caller's full name.
-        appointment_date: Appointment date (Eastern Time). E.g., 'this wednesday'.
+        name: The caller's full name (used in the record; do NOT read back to caller).
+        appointment_date: Appointment date (Eastern Time). E.g., 'this wednesday' or 'motzei shabbos'.
         slot_time: Specific time slot in Eastern Time. E.g., '7:30 PM' or '11:45 AM'.
+                   For consecutive bookings, pass the EARLIER of the two slots.
         group_size: Number of people attending (1-6).
         wedding_date: The caller's wedding date.
         phone: Phone number for confirmation (the caller's number).
+        slot_pairing: 'single' (default) or 'consecutive'. Only matters for groups of 5–6.
     """
     return await _call_route(
         "createBooking",
@@ -129,6 +138,7 @@ async def create_booking(
             "groupSize": group_size,
             "weddingDate": wedding_date,
             "phone": phone,
+            "slotPairing": slot_pairing,
         },
     )
 
@@ -137,13 +147,16 @@ async def create_booking(
 async def get_business_info(context: RunContext, topic: str) -> str:
     """Get specific business information.
 
-    Use this if you need to double-check details about hours, location,
-    sizes, donation, alterations, seamstresses, pickup, return, or
-    group-size policy.
+    Use this if you need to double-check details about a topic before
+    answering the caller. Prefer the system-prompt knowledge for the
+    common topics — call this tool when the caller asks something
+    specific and you want to make sure you have the exact wording.
 
     Args:
         topic: One of: hours, location, sizes, donation, alterations,
-               seamstresses, pickup, return, groupSize.
+               seamstresses, pickup, return, groupSize, parking, bring,
+               children, late, accessories, photos, shipping, waitlist,
+               reschedule, cancel.
     """
     return await _call_route("getBusinessInfo", {"topic": topic})
 
