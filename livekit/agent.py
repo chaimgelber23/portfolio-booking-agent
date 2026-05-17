@@ -35,6 +35,7 @@ from livekit.agents import (
     Agent,
     AgentSession,
     JobContext,
+    JobProcess,
     RoomInputOptions,
     WorkerOptions,
     cli,
@@ -181,7 +182,7 @@ async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect()
 
     session = AgentSession(
-        vad=silero.VAD.load(),
+        vad=ctx.proc.userdata["vad"],
         stt=deepgram.STT(model="nova-2"),
         llm=openai.LLM(model="gpt-4o-mini", temperature=0.7),
         tts=elevenlabs.TTS(
@@ -206,5 +207,22 @@ async def entrypoint(ctx: JobContext) -> None:
     )
 
 
+def _prewarm(proc: JobProcess) -> None:
+    # Load silero VAD once per worker process so the first call doesn't pay
+    # the ~1-2s init cost. Without prewarm callers heard 5+ rings before pickup.
+    proc.userdata["vad"] = silero.VAD.load(min_silence_duration=0.5)
+
+
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
+    # Port 8081 — gemach. (autosync 8082, cold-calls 8083, matchdaypro 8084.)
+    # load_threshold=0.95 keeps the worker accepting calls under heavy CPU
+    # instead of oscillating busy/free at 0.7 (the default) and bouncing
+    # incoming SIP dispatches.
+    cli.run_app(
+        WorkerOptions(
+            entrypoint_fnc=entrypoint,
+            prewarm_fnc=_prewarm,
+            port=8081,
+            load_threshold=0.95,
+        )
+    )
