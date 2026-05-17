@@ -184,7 +184,10 @@ async def entrypoint(ctx: JobContext) -> None:
     session = AgentSession(
         vad=ctx.proc.userdata["vad"],
         stt=deepgram.STT(model="nova-2"),
-        llm=openai.LLM(model="gpt-4o-mini", temperature=0.7),
+        # gpt-4o (not -mini) + low temperature — the mini model kept
+        # ignoring the no-repeat / single-recap instructions. Voice calls
+        # are low-volume so the cost difference is a few cents/month.
+        llm=openai.LLM(model="gpt-4o", temperature=0.3),
         tts=elevenlabs.TTS(
             voice_id=os.environ.get("ELEVEN_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
             model="eleven_turbo_v2_5",
