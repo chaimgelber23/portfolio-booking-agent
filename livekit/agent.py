@@ -198,8 +198,10 @@ async def entrypoint(ctx: JobContext) -> None:
 
     await session.generate_reply(
         instructions=(
-            "Greet the caller warmly: 'Hi, thank you for calling Gelber Gown Gemach! "
-            "Mazel tov if you're calling about a wedding. How can I help you today?'"
+            "Greet the caller exactly: "
+            "'Hi, this is the Gelber Gown Gemach automated system. "
+            "You can ask me questions, or book or cancel an appointment. "
+            "How can I help you?'"
         ),
     )
 
