@@ -183,7 +183,10 @@ async def entrypoint(ctx: JobContext) -> None:
 
     session = AgentSession(
         vad=ctx.proc.userdata["vad"],
-        stt=deepgram.STT(model="nova-2"),
+        # nova-3 — much better than nova-2 at accented / Yiddish-inflected
+        # speech. nova-2 was failing to transcribe "Motzei Shabbos" at all,
+        # which left the agent with no input and a long dead-air pause.
+        stt=deepgram.STT(model="nova-3"),
         # gpt-4o (not -mini) + low temperature — the mini model kept
         # ignoring the no-repeat / single-recap instructions. Voice calls
         # are low-volume so the cost difference is a few cents/month.
@@ -191,6 +194,15 @@ async def entrypoint(ctx: JobContext) -> None:
         tts=elevenlabs.TTS(
             voice_id=os.environ.get("ELEVEN_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
             model="eleven_turbo_v2_5",
+            # speed 0.9 — ~10% slower than default. Callers said the agent
+            # talked too fast to catch the hours and times.
+            voice_settings=elevenlabs.VoiceSettings(
+                stability=0.5,
+                similarity_boost=0.75,
+                style=0.0,
+                speed=0.9,
+                use_speaker_boost=True,
+            ),
         ),
     )
 
