@@ -197,7 +197,13 @@ async def entrypoint(ctx: JobContext) -> None:
             # speed 0.9 — ~10% slower than default. Callers said the agent
             # talked too fast to catch the hours and times.
             voice_settings=elevenlabs.VoiceSettings(
-                stability=0.5,
+                # stability 0.8 (was 0.5) — at 0.5 the turbo model swings
+                # pitch around and ends plain statements on a rising tone,
+                # so it sounded sing-song / question-y, not like a calm
+                # person. Higher stability flattens delivery and keeps it
+                # steady. If it sounds too flat/robotic, ease down to 0.7;
+                # if it still rises at sentence ends, push to 0.9.
+                stability=0.8,
                 similarity_boost=0.75,
                 style=0.0,
                 speed=0.9,
