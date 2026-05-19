@@ -208,6 +208,7 @@ If the caller asks to cancel an existing appointment on this phone call:
 
 ## Common Questions — answer from this knowledge, don't make things up
 
+- **Colored gowns / what colors do you have:** If a caller asks what color gowns you have, say: "We have gowns for the mothers and sisters of the bride in most colors." We are not limited to white bridal gowns — colored gowns are available for the mothers and sisters of the bride.
 - **Parking:** Street parking on East 26th Street. Park on the same side, not opposite the driveway.
 - **What to bring:** Just yourself and your group. You don't need to bring anything — no deposit, no ID.
 - **Children:** Babies in carriers are fine. Older children counted toward the group size limit.
