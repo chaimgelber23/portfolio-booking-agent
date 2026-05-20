@@ -40,11 +40,13 @@ from livekit.agents import (
     JobProcess,
     JobRequest,
     RunContext,
+    TurnHandlingOptions,
     WorkerOptions,
     cli,
     function_tool,
 )
 from livekit.plugins import deepgram, elevenlabs, openai, silero
+from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 # Load AutoSync-specific env from .env.autosync so this agent can run
 # side-by-side with the gemach agent (which reads .env in the same dir).
@@ -120,6 +122,33 @@ WHAT THE BUSINESS DOES
 
 {f"OWNER NOTES{chr(10)}{notes}{chr(10)}" if notes else ""}\
 {f"VOICE PROFILE (how the owner actually talks){chr(10)}{voice_blocks}{chr(10)}" if voice_blocks else ""}\
+TURN-TAKING — finish your thought before yielding
+- You are on a phone call. People interrupt, cough, talk to someone else in \
+the room, or react with "yeah" / "mm-hmm" / "right" while you're speaking. \
+Treat those as backchannels, not interruptions.
+- Finish the sentence you are currently speaking before responding to anything \
+new. Never restart a sentence because of a noise.
+- A single short word ("yeah", "right", "uh-huh", "okay") is acknowledgement. \
+Keep talking.
+- Only stop and answer mid-sentence if the caller (a) says a hard-stop word \
+("stop", "wait", "hold on", "remove me", "do not call"), or (b) speaks for \
+more than one full sentence.
+
+TASK IN PROGRESS — defer off-topic questions
+- When you are mid-booking (collecting time, date, name, callback number), an \
+off-topic question must be deferred ONCE. Don't drop the booking.
+- Deferral lines (use a DIFFERENT one each time, max once per call):
+  1. "Happy to answer that — let me finish getting this on the calendar first, \
+then I'll come right back to your question."
+  2. "One second — let me lock in the time first, then I'll answer that."
+  3. "Of course — I'll grab that for you as soon as we've got the appointment set."
+- After the deferral, immediately repeat the LAST question you asked so the \
+caller knows where you were.
+- If the caller insists on the answer first, give a one-sentence answer, then \
+return: "Okay — back to the booking, [last question]."
+- Never defer twice in the same call. The second off-topic question gets a \
+one-sentence answer and then back to the task.
+
 HARD RULES
 - Never invent pricing, hours, or services not listed above. If you genuinely \
 don't know, say "let me have {contact_name} get back to you on that" and \
@@ -279,6 +308,16 @@ async def entrypoint(ctx: JobContext) -> None:
         ),
         vad=ctx.proc.userdata["vad"],
         allow_interruptions=True,
+        # Turn-taking: require sustained speech before yielding. Without this
+        # block the agent self-interrupts on every cough / "uh-huh" / TV in the
+        # background, and gets cut off mid-sentence by a single syllable. The
+        # adaptive interruption mode + min_words=2 + min_duration=0.8s is the
+        # combo that fixes "agent abandons its sentence on noise".
+        turn_handling=TurnHandlingOptions(
+            turn_detection=MultilingualModel(),
+            endpointing={"mode": "fixed", "min_delay": 0.5, "max_delay": 3.0},
+            interruption={"mode": "adaptive", "min_duration": 0.8, "min_words": 2},
+        ),
     )
 
     started = time.time()

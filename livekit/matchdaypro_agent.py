@@ -46,11 +46,13 @@ from livekit.agents import (
     JobProcess,
     JobRequest,
     RunContext,
+    TurnHandlingOptions,
     WorkerOptions,
     cli,
     function_tool,
 )
 from livekit.plugins import deepgram, elevenlabs, openai, silero
+from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 load_dotenv(".env.matchdaypro")
 logger = logging.getLogger("mdp-hotline")
@@ -164,6 +166,35 @@ result in conversation. Don't read raw JSON.
 4. Get off the list — IMMEDIATELY call mark_dnc, then say: "Done. You're off \
 the list for {org_name}. Have a good day." Then end the call. Don't argue, \
 don't ask why, don't try to save the call.
+
+TURN-TAKING — finish your thought before yielding
+- You are on a phone call with a donor who may be older, in a noisy room, \
+or talking with someone next to them. Treat coughs, "uh-huh", "yeah", and \
+background voices as backchannels, NOT interruptions.
+- Finish the sentence you are currently speaking before responding to anything \
+new. Never restart a sentence because of a noise.
+- Only stop mid-sentence if the donor (a) says a hard-stop word — "stop", \
+"wait", "hold on", "human", "remove me" — or (b) speaks a real phrase, more \
+than three words, not a single reaction word.
+
+TASK IN PROGRESS — finish the donation before chasing other questions
+- When you are mid-donation (collecting amount, confirming amount, calling \
+take_donation, sending the SMS link), and the donor asks something off-topic — \
+match math, campaign history, where the money goes, your AI nature — do NOT \
+drop the donation flow. The Stripe session will be lost.
+- Use ONE of these deferral lines (pick a DIFFERENT one each call, max once \
+per call):
+  1. "Great question — let me get the donation set up first so it goes through, \
+then I'll come right back to that."
+  2. "Of course — one second to lock in the gift, then I'll answer that for you."
+  3. "Sure — let me text you the link first so you have it, then I'll come back \
+to your question."
+- After the deferral, IMMEDIATELY repeat the last thing you asked, so the \
+donor knows where you were.
+- If the donor insists, give a ONE-sentence answer, then return: "Okay — back \
+to the gift, [last question]."
+- After take_donation + SMS link succeed, THEN come back to deferred questions: \
+"You asked about [topic] — what did you want to know?"
 
 HARD RULES
 - Never invent matching math. The current match info is in the prompt — quote it.
@@ -534,8 +565,19 @@ async def entrypoint(ctx: JobContext) -> None:
         stt=deepgram.STT(model="nova-3"),
         llm=openai.LLM(model="gpt-4o", temperature=0.6),
         tts=tts_engine,
-        vad=silero.VAD.load(min_silence_duration=0.5),
+        vad=silero.VAD.load(min_silence_duration=0.6),
         allow_interruptions=True,
+        # Turn-taking — donor base skews older. min_duration=1.0 + min_words=3
+        # means a cough, a "yes", or a TV in the background won't cut the
+        # agent off mid-disclosure or mid-donation-readback. Combined with
+        # the TURN-TAKING + TASK IN PROGRESS blocks added to build_system_prompt
+        # below, this stops the agent from abandoning a take_donation flow
+        # when the donor asks "wait, how does this work?" mid-collection.
+        turn_handling=TurnHandlingOptions(
+            turn_detection=MultilingualModel(),
+            endpointing={"mode": "fixed", "min_delay": 0.6, "max_delay": 3.0},
+            interruption={"mode": "adaptive", "min_duration": 1.0, "min_words": 3},
+        ),
     )
 
     # Track transcript turns for end-of-call save.

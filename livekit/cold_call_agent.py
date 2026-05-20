@@ -44,11 +44,13 @@ from livekit.agents import (
     JobProcess,
     JobRequest,
     RunContext,
+    TurnHandlingOptions,
     WorkerOptions,
     cli,
     function_tool,
 )
 from livekit.plugins import deepgram, elevenlabs, openai, silero
+from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 load_dotenv(".env.coldcalls")
 logger = logging.getLogger("cold-call-agent")
@@ -158,6 +160,30 @@ verbatim.
 
 OBJECTION RESPONSES (use as guides, not scripts)
 {objection_lines}
+
+TURN-TAKING — finish your opener and your sentences
+- The opener was carefully tuned. Once you start it, finish it. Don't let a \
+"hello?" / "who is this?" / "yeah?" cut it short — those are NOT real \
+interruptions, they're the prospect just confirming they're on the line.
+- A single short word ("yeah", "uh-huh", "right", "okay", "hello") is \
+acknowledgement, not an interruption. Keep talking.
+- Only stop mid-sentence if the prospect (a) says a hard-stop word — "stop", \
+"remove me", "do not call", "wait", "hold on", "not interested" — or \
+(b) speaks a real phrase, more than three words.
+
+TASK IN PROGRESS — finish the meeting-book before chasing other questions
+- When you are mid-close (proposing a slot, collecting their first name, \
+calling book_meeting), if the prospect asks an off-topic question — pricing, \
+how it works, who you are — do NOT drop the close. The meeting will be lost.
+- Use ONE of these deferral lines (pick a DIFFERENT one each call, max once \
+per call):
+  1. "Good question — let me get this 15-minute slot down for you first, then \
+I'll answer."
+  2. "One second — let me lock the time in, then I'll come right back to that."
+- After the deferral, IMMEDIATELY return to where you were: "Sound good for \
+[proposed time]?"
+- If they insist on the answer first, give it in ONE sentence, then return: \
+"Okay — back to the slot. Does [time] work?"
 
 HARD RULES
 - Keep responses SHORT — 1-3 sentences. This is a phone call, not an email.
@@ -358,6 +384,15 @@ async def entrypoint(ctx: JobContext) -> None:
         ),
         vad=ctx.proc.userdata["vad"],
         allow_interruptions=True,
+        # Turn-taking — outbound cold calls. Prospects are judging us, so
+        # slightly faster turn than inbound (min_duration=0.7s vs 0.8-1.0s).
+        # Still require min_words=2 so a "yeah" / "hello?" / "what?" doesn't
+        # cut the opener off — the carefully-tuned opener MUST land.
+        turn_handling=TurnHandlingOptions(
+            turn_detection=MultilingualModel(),
+            endpointing={"mode": "fixed", "min_delay": 0.5, "max_delay": 3.0},
+            interruption={"mode": "adaptive", "min_duration": 0.7, "min_words": 2},
+        ),
     )
 
     started = time.time()

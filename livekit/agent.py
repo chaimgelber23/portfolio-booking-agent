@@ -37,12 +37,14 @@ from livekit.agents import (
     JobContext,
     JobProcess,
     RoomInputOptions,
+    TurnHandlingOptions,
     WorkerOptions,
     cli,
     function_tool,
     RunContext,
 )
 from livekit.plugins import deepgram, elevenlabs, openai, silero
+from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from system_prompt import GEMACH_SYSTEM_PROMPT
 
@@ -210,6 +212,20 @@ async def entrypoint(ctx: JobContext) -> None:
                 use_speaker_boost=True,
             ),
         ),
+        # Turn-taking — gemach callers (older, Yiddish-inflected, often
+        # calling from a noisy kitchen) need MORE slack than the defaults.
+        # min_duration=1.0 + min_words=3 means a cough, a "yeah", or a
+        # background voice will NOT cut the agent off mid-sentence. The
+        # caller has to actually speak a short phrase to interrupt. This is
+        # the pair that fixes "agent abandons its sentence on noise" and
+        # "agent drops the booking when caller asks an off-topic question
+        # mid-flow" — combined with the new TURN-TAKING + TASK IN PROGRESS
+        # blocks in system_prompt.py.
+        turn_handling=TurnHandlingOptions(
+            turn_detection=MultilingualModel(),
+            endpointing={"mode": "fixed", "min_delay": 0.6, "max_delay": 3.0},
+            interruption={"mode": "adaptive", "min_duration": 1.0, "min_words": 3},
+        ),
     )
 
     await session.start(
@@ -231,7 +247,9 @@ async def entrypoint(ctx: JobContext) -> None:
 def _prewarm(proc: JobProcess) -> None:
     # Load silero VAD once per worker process so the first call doesn't pay
     # the ~1-2s init cost. Without prewarm callers heard 5+ rings before pickup.
-    proc.userdata["vad"] = silero.VAD.load(min_silence_duration=0.5)
+    # min_silence_duration=0.6 (was 0.5) — older gemach callers pause mid-
+    # sentence; 0.5 was cutting them off and ending their turn early.
+    proc.userdata["vad"] = silero.VAD.load(min_silence_duration=0.6)
 
 
 if __name__ == "__main__":

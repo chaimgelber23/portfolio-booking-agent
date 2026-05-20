@@ -1,7 +1,11 @@
-livekit-agents>=0.12.0
+livekit-agents>=1.5.9
 livekit-plugins-openai>=0.10.0
 livekit-plugins-elevenlabs>=0.7.0
 livekit-plugins-deepgram>=0.6.0
 livekit-plugins-silero>=0.7.0
+# New 2026-05-19 — context-aware end-of-turn detector. Used by every agent's
+# TurnHandlingOptions to stop self-interrupting on coughs / "uh-huh" and to
+# stop being cut off mid-sentence by a single syllable from the caller.
+livekit-plugins-turn-detector>=1.5.9
 httpx>=0.27.0
 python-dotenv>=1.0.0
