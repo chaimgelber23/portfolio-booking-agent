@@ -381,6 +381,7 @@ async def entrypoint(ctx: JobContext) -> None:
         tts=elevenlabs.TTS(
             voice_id=os.environ.get("ELEVEN_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
             model="eleven_turbo_v2_5",
+            encoding="pcm_24000",
         ),
         vad=ctx.proc.userdata["vad"],
         allow_interruptions=True,
